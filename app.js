@@ -2,7 +2,6 @@ require('dotenv').config();
 const express = require('express');
 const initSqlJs = require('sql.js');
 const multer = require('multer');
-const { PDFParse } = require('pdf-parse');
 const fs = require('fs');
 const path = require('path');
 const session = require('express-session');
@@ -41,8 +40,9 @@ let dbInstance = null;
 async function getDb() {
     if (dbInstance) return dbInstance;
 
+    const wasmPath = require.resolve('sql.js/dist/sql-wasm.wasm');
     const SQL = await initSqlJs({
-        locateFile: file => path.join(__dirname, 'node_modules/sql.js/dist', file)
+        locateFile: () => wasmPath
     });
 
     if (fs.existsSync(dbPath)) {
@@ -70,7 +70,7 @@ async function getDb() {
 }
 
 function saveDb(db) {
-    if (isVercel) return; // Vercel bersifat read-only pada direktori proyek
+    if (isVercel) return;
     const data = db.export();
     const buffer = Buffer.from(data);
     fs.writeFileSync(dbPath, buffer);
@@ -192,7 +192,7 @@ app.get('/admin', cekLoginAdmin, async (req, res) => {
     }
 });
 
-// Upload PDF Baru (Simpan permanen saat di lokal sebelum push ke GitHub)
+// Upload PDF Baru (Lazy-load pdf-parse agar tidak membebani cold start Vercel)
 app.post('/admin/upload', cekLoginAdmin, upload.single('file_pdf'), async (req, res) => {
     if (!req.file) return res.send('File PDF wajib dipilih.');
 
@@ -200,6 +200,7 @@ app.post('/admin/upload', cekLoginAdmin, upload.single('file_pdf'), async (req, 
     const originalName = req.file.originalname;
 
     try {
+        const { PDFParse } = require('pdf-parse');
         const dataBuffer = fs.readFileSync(filePath);
         const parser = new PDFParse({ data: dataBuffer });
         const pdfData = await parser.getText();
