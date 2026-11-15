@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot Asisten Dokumen</title>
+    <link rel="icon" type="image/png" href="/logo/logo_tewiwi.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg-page: #f7eff2;
+            --card-bg: #ffffff;
+            --primary-blue: #163387;
+            --primary-blue-hover: #102669;
+            --primary-blue-disabled: #8fa1d1;
+            --soft-blue-bg: #f2f5fc;
+            --soft-blue-border: #e3eaf8;
+            --text-dark: #222634;
+            --text-muted: #5e7199;
+            --divider: #edf1f8;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--bg-page);
+            color: var(--text-dark);
+            margin: 0;
+            padding: 32px 16px;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+        }
+
+        .main-card {
+            background: var(--card-bg);
+            width: 100%;
+            max-width: 640px;
+            border-radius: 20px;
+            padding: 28px;
+            box-shadow: 0 8px 30px rgba(22, 51, 135, 0.06);
+        }
+
+        .top-bar {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid var(--divider);
+            margin-bottom: 16px;
+        }
+
+        .brand-logo {
+            height: 48px;
+            width: auto;
+            object-fit: contain;
+            border-radius: 8px;
+        }
+
+        .top-bar h2 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--primary-blue);
+            letter-spacing: -0.01em;
+        }
+
+        .doc-info {
+            font-size: 13.5px;
+            color: var(--text-muted);
+            background: var(--soft-blue-bg);
+            padding: 12px 16px;
+            border-radius: 12px;
+            margin-bottom: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .doc-info strong {
+            color: var(--primary-blue);
+            font-weight: 700;
+        }
+
+        #chat-box {
+            background: var(--soft-blue-bg);
+            height: 430px;
+            overflow-y: auto;
+            padding: 18px;
+            border-radius: 16px;
+            margin-bottom: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        #chat-box::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        #chat-box::-webkit-scrollbar-thumb {
+            background: #ccd6ec;
+            border-radius: 999px;
+        }
+
+        .msg {
+            padding: 12px 16px;
+            border-radius: 14px;
+            max-width: 82%;
+            line-height: 1.55;
+            font-size: 14.5px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .user {
+            background: var(--primary-blue);
+            color: #ffffff;
+            align-self: flex-end;
+            border-bottom-right-radius: 4px;
+            font-weight: 500;
+        }
+
+        .bot {
+            background: #ffffff;
+            color: var(--text-dark);
+            align-self: flex-start;
+            border-bottom-left-radius: 4px;
+            border: 1px solid var(--soft-blue-border);
+            box-shadow: 0 2px 6px rgba(22, 51, 135, 0.03);
+        }
+
+        .helper-text {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            line-height: 1.5;
+        }
+
+        form {
+            display: flex;
+            gap: 10px;
+        }
+
+        input {
+            flex: 1;
+            padding: 13px 16px;
+            border: 1.5px solid #d5dff2;
+            border-radius: 12px;
+            font-size: 14.5px;
+            font-family: inherit;
+            color: var(--text-dark);
+            background: #ffffff;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        input::placeholder {
+            color: #8c9bbd;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--primary-blue);
+            box-shadow: 0 0 0 3px rgba(22, 51, 135, 0.1);
+        }
+
+        button {
+            padding: 13px 24px;
+            background: var(--primary-blue);
+            color: #ffffff;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 14.5px;
+            font-weight: 700;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+
+        button:hover:not(:disabled) {
+            background: var(--primary-blue-hover);
+        }
+
+        button:active:not(:disabled) {
+            transform: translateY(1px);
+        }
+
+        button:disabled {
+            background: var(--primary-blue-disabled);
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="main-card">
+        <div class="top-bar">
+            <img src="/logo/logo_tewiwi.png" alt="Logo Téwiwi Bakehouse" class="brand-logo">
+            <h2>Chatbot Informasi</h2>
+        </div>
+
+        <!-- <div class="doc-info">
+            <span>Referensi Aktif</span>
+            <strong><%= namaDokumen %></strong>
+        </div> -->
+
+        <div id="chat-box">
+            <div class="msg bot">Halo! Ada yang bisa saya bantu terkait dokumen di atas?</div>
+        </div>
+
+        <div class="helper-text">
+            Ketik pertanyaan Anda di bawah ini untuk mencari informasi sesuai dokumen referensi yang aktif.
+        </div>
+
+        <form id="chat-form">
+            <input type="text" id="pesan-input" placeholder="Tulis pertanyaan Anda..." required autocomplete="off">
+            <button type="submit" id="kirim-btn">Kirim</button>
+        </form>
+    </div>
+
+    <script>
+        const chatForm = document.getElementById('chat-form');
+        const pesanInput = document.getElementById('pesan-input');
+        const chatBox = document.getElementById('chat-box');
+        const kirimBtn = document.getElementById('kirim-btn');
+
+        function tambahBubble(teks, tipe) {
+            const div = document.createElement('div');
+            div.className = `msg ${tipe}`;
+            div.textContent = teks;
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
+            return div;
+        }
+
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const pesan = pesanInput.value.trim();
+            if (!pesan) return;
+
+            tambahBubble(pesan, 'user');
+            pesanInput.value = '';
+            kirimBtn.disabled = true;
+
+            const loadingBubble = tambahBubble('Mengetik...', 'bot');
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pesan })
+                });
+                const data = await response.json();
+                loadingBubble.textContent = data.reply;
+            } catch (err) {
+                loadingBubble.textContent = 'Terjadi kesalahan jaringan.';
+            } finally {
+                kirimBtn.disabled = false;
+                pesanInput.focus();
+            }
+        });
+    </script>
+</body>
+
+</html>
