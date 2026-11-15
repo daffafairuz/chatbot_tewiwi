@@ -1,6 +1,6 @@
 require('dotenv').config();
 const express = require('express');
-const Database = require('better-sqlite3');
+const initSqlJs = require('sql.js');
 const multer = require('multer');
 const { PDFParse } = require('pdf-parse');
 const fs = require('fs');
@@ -10,6 +10,8 @@ const OpenAI = require('openai');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const isVercel = process.env.VERCEL === '1';
+const dbPath = path.join(__dirname, 'database.sqlite');
 
 // 1. Inisialisasi Groq Client
 const groq = new OpenAI({
@@ -19,28 +21,38 @@ const groq = new OpenAI({
 
 // 2. Konfigurasi Express & Session
 app.set('view engine', 'ejs');
-app.use('/logo', express.static('logo'));
+app.set('views', path.join(__dirname, 'views'));
+app.use('/logo', express.static(path.join(__dirname, 'logo')));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(session({
     secret: process.env.SESSION_SECRET || 'rahasia_tewiwi_123',
     resave: false,
     saveUninitialized: false,
-    cookie: { maxAge: 3600000 } // Sesi aktif 1 jam
+    cookie: { maxAge: 3600000 }
 }));
 
-// Konfigurasi Upload Sementara
-const upload = multer({ dest: 'uploads/' });
+// Gunakan /tmp saat di Vercel agar tidak error read-only filesystem
+const upload = multer({ dest: isVercel ? '/tmp' : path.join(__dirname, 'uploads') });
 
-// 3. Inisialisasi Database SQLite (Otomatis membuat file database.sqlite)
-// const db = new Database(path.join(__dirname, 'database.sqlite'));
-const isVercel = process.env.VERCEL === '1';
-const db = new Database(path.join(__dirname, 'database.sqlite'), {
-    readonly: isVercel
-});
+// 3. Inisialisasi Database SQLite (sql.js)
+let dbInstance = null;
 
-if (!isVercel) {
-    db.exec(`
+async function getDb() {
+    if (dbInstance) return dbInstance;
+
+    const SQL = await initSqlJs({
+        locateFile: file => path.join(__dirname, 'node_modules/sql.js/dist', file)
+    });
+
+    if (fs.existsSync(dbPath)) {
+        const fileBuffer = fs.readFileSync(dbPath);
+        dbInstance = new SQL.Database(fileBuffer);
+    } else {
+        dbInstance = new SQL.Database();
+    }
+
+    dbInstance.run(`
         CREATE TABLE IF NOT EXISTS dokumen_pdf (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nama_file TEXT NOT NULL,
@@ -49,18 +61,20 @@ if (!isVercel) {
             uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     `);
+
+    if (!isVercel) {
+        saveDb(dbInstance);
+    }
+
+    return dbInstance;
 }
 
-// Buat tabel otomatis jika belum ada
-db.exec(`
-    CREATE TABLE IF NOT EXISTS dokumen_pdf (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nama_file TEXT NOT NULL,
-        isi_teks TEXT NOT NULL,
-        is_active INTEGER DEFAULT 1,
-        uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-`);
+function saveDb(db) {
+    if (isVercel) return; // Vercel bersifat read-only pada direktori proyek
+    const data = db.export();
+    const buffer = Buffer.from(data);
+    fs.writeFileSync(dbPath, buffer);
+}
 
 // Middleware Proteksi Halaman Admin
 function cekLoginAdmin(req, res, next) {
@@ -73,14 +87,22 @@ function cekLoginAdmin(req, res, next) {
 // ==========================================
 // ROUTE PENGUNJUNG (CHATBOT)
 // ==========================================
-app.get('/', (req, res) => {
+app.get('/', async (req, res) => {
     try {
-        const dokumen = db.prepare('SELECT nama_file FROM dokumen_pdf WHERE is_active = 1 LIMIT 1').get();
-        const namaDokumen = dokumen ? dokumen.nama_file : 'Belum ada dokumen aktif';
+        const db = await getDb();
+        const stmt = db.prepare('SELECT nama_file FROM dokumen_pdf WHERE is_active = 1 LIMIT 1');
+        let namaDokumen = 'Belum ada dokumen aktif';
+
+        if (stmt.step()) {
+            const row = stmt.getAsObject();
+            namaDokumen = row.nama_file;
+        }
+        stmt.free();
+
         res.render('index', { namaDokumen });
     } catch (err) {
-        console.error('SQLite Error (/):', err.message);
-        res.status(500).send('Gagal memuat data dari database.');
+        console.error('SQLite Error (/):', err);
+        res.status(500).send('Gagal memuat data dari database: ' + err.message);
     }
 });
 
@@ -89,13 +111,19 @@ app.post('/api/chat', async (req, res) => {
     if (!pesan) return res.status(400).json({ reply: 'Pesan tidak boleh kosong.' });
 
     try {
-        const dokumen = db.prepare('SELECT nama_file, isi_teks FROM dokumen_pdf WHERE is_active = 1 LIMIT 1').get();
+        const db = await getDb();
+        const stmt = db.prepare('SELECT nama_file, isi_teks FROM dokumen_pdf WHERE is_active = 1 LIMIT 1');
+        let dokumen = null;
+
+        if (stmt.step()) {
+            dokumen = stmt.getAsObject();
+        }
+        stmt.free();
 
         if (!dokumen) {
             return res.json({ reply: 'Maaf, admin belum mengaktifkan dokumen PDF apapun sebagai referensi.' });
         }
 
-        // Ambil maksimal 18.000 karakter pertama agar aman dari batas TPM Groq
         const konteksTeks = dokumen.isi_teks.substring(0, 18000);
 
         const completion = await groq.chat.completions.create({
@@ -146,17 +174,25 @@ app.get('/logout', (req, res) => {
 // ==========================================
 // ROUTE DASHBOARD ADMIN (KELOLA PDF)
 // ==========================================
-app.get('/admin', cekLoginAdmin, (req, res) => {
+app.get('/admin', cekLoginAdmin, async (req, res) => {
     try {
-        const dokumenList = db.prepare('SELECT id, nama_file, is_active, uploaded_at FROM dokumen_pdf ORDER BY uploaded_at DESC').all();
+        const db = await getDb();
+        const stmt = db.prepare('SELECT id, nama_file, is_active, uploaded_at FROM dokumen_pdf ORDER BY uploaded_at DESC');
+        const dokumenList = [];
+
+        while (stmt.step()) {
+            dokumenList.push(stmt.getAsObject());
+        }
+        stmt.free();
+
         res.render('admin', { dokumenList });
     } catch (err) {
-        console.error('SQLite Error (/admin):', err.message);
+        console.error('SQLite Error (/admin):', err);
         res.status(500).send('Gagal memuat daftar dokumen.');
     }
 });
 
-// Upload PDF Baru
+// Upload PDF Baru (Simpan permanen saat di lokal sebelum push ke GitHub)
 app.post('/admin/upload', cekLoginAdmin, upload.single('file_pdf'), async (req, res) => {
     if (!req.file) return res.send('File PDF wajib dipilih.');
 
@@ -170,12 +206,13 @@ app.post('/admin/upload', cekLoginAdmin, upload.single('file_pdf'), async (req, 
         await parser.destroy();
         const cleanText = pdfData.text.replace(/\s+/g, ' ').trim();
 
-        // Nonaktifkan dokumen lama & simpan dokumen baru dalam satu transaksi
-        const simpanDokumen = db.transaction(() => {
-            db.prepare('UPDATE dokumen_pdf SET is_active = 0').run();
-            db.prepare('INSERT INTO dokumen_pdf (nama_file, isi_teks, is_active) VALUES (?, ?, 1)').run(originalName, cleanText);
-        });
-        simpanDokumen();
+        const db = await getDb();
+        db.run('UPDATE dokumen_pdf SET is_active = 0');
+        db.run(
+            'INSERT INTO dokumen_pdf (nama_file, isi_teks, is_active) VALUES (?, ?, 1)',
+            [originalName, cleanText]
+        );
+        saveDb(db);
 
         if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
         res.redirect('/admin');
@@ -187,14 +224,13 @@ app.post('/admin/upload', cekLoginAdmin, upload.single('file_pdf'), async (req, 
 });
 
 // Aktifkan Ulang Dokumen Lama
-app.post('/admin/aktifkan/:id', cekLoginAdmin, (req, res) => {
-    const docId = req.params.id;
+app.post('/admin/aktifkan/:id', cekLoginAdmin, async (req, res) => {
+    const docId = Number(req.params.id);
     try {
-        const aktifkan = db.transaction(() => {
-            db.prepare('UPDATE dokumen_pdf SET is_active = 0').run();
-            db.prepare('UPDATE dokumen_pdf SET is_active = 1 WHERE id = ?').run(docId);
-        });
-        aktifkan();
+        const db = await getDb();
+        db.run('UPDATE dokumen_pdf SET is_active = 0');
+        db.run('UPDATE dokumen_pdf SET is_active = 1 WHERE id = ?', [docId]);
+        saveDb(db);
         res.redirect('/admin');
     } catch (err) {
         res.status(500).send('Gagal mengaktifkan dokumen.');
@@ -202,19 +238,17 @@ app.post('/admin/aktifkan/:id', cekLoginAdmin, (req, res) => {
 });
 
 // Hapus Dokumen
-app.post('/admin/hapus/:id', cekLoginAdmin, (req, res) => {
-    const docId = req.params.id;
+app.post('/admin/hapus/:id', cekLoginAdmin, async (req, res) => {
+    const docId = Number(req.params.id);
     try {
-        db.prepare('DELETE FROM dokumen_pdf WHERE id = ?').run(docId);
+        const db = await getDb();
+        db.run('DELETE FROM dokumen_pdf WHERE id = ?', [docId]);
+        saveDb(db);
         res.redirect('/admin');
     } catch (err) {
         res.status(500).send('Gagal menghapus dokumen.');
     }
 });
-
-// app.listen(PORT, () => {
-//     console.log(`Server aktif di port ${PORT}`);
-// });
 
 if (!isVercel) {
     app.listen(PORT, () => {

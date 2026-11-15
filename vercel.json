@@ -8,7 +8,8 @@
         "includeFiles": [
           "views/**",
           "logo/**",
-          "database.sqlite"
+          "database.sqlite",
+          "node_modules/sql.js/dist/**"
         ]
       }
     }
