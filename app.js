@@ -33,7 +33,23 @@ app.use(session({
 const upload = multer({ dest: 'uploads/' });
 
 // 3. Inisialisasi Database SQLite (Otomatis membuat file database.sqlite)
-const db = new Database(path.join(__dirname, 'database.sqlite'));
+// const db = new Database(path.join(__dirname, 'database.sqlite'));
+const isVercel = process.env.VERCEL === '1';
+const db = new Database(path.join(__dirname, 'database.sqlite'), {
+    readonly: isVercel
+});
+
+if (!isVercel) {
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS dokumen_pdf (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nama_file TEXT NOT NULL,
+            isi_teks TEXT NOT NULL,
+            is_active INTEGER DEFAULT 1,
+            uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+}
 
 // Buat tabel otomatis jika belum ada
 db.exec(`
@@ -196,6 +212,14 @@ app.post('/admin/hapus/:id', cekLoginAdmin, (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
-    console.log(`Server aktif di port ${PORT}`);
-});
+// app.listen(PORT, () => {
+//     console.log(`Server aktif di port ${PORT}`);
+// });
+
+if (!isVercel) {
+    app.listen(PORT, () => {
+        console.log(`Server aktif di http://localhost:${PORT}`);
+    });
+}
+
+module.exports = app;
