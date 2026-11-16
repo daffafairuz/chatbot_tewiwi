@@ -10,7 +10,9 @@ const OpenAI = require('openai');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const isVercel = process.env.VERCEL === '1';
-const dbPath = path.join(__dirname, 'database.sqlite');
+// const dbPath = path.join(__dirname, 'database.sqlite');
+const bundledDbPath = path.join(__dirname, 'database.sqlite');
+const dbPath = isVercel ? '/tmp/database.sqlite' : bundledDbPath;
 
 // 1. Inisialisasi Groq Client
 const groq = new OpenAI({
@@ -45,6 +47,11 @@ async function getDb() {
         locateFile: () => wasmPath
     });
 
+    // Di Vercel, salin database bawaan ke /tmp agar bisa di-insert/update
+    if (isVercel && !fs.existsSync(dbPath) && fs.existsSync(bundledDbPath)) {
+        fs.copyFileSync(bundledDbPath, dbPath);
+    }
+
     if (fs.existsSync(dbPath)) {
         const fileBuffer = fs.readFileSync(dbPath);
         dbInstance = new SQL.Database(fileBuffer);
@@ -62,10 +69,7 @@ async function getDb() {
         )
     `);
 
-    if (!isVercel) {
-        saveDb(dbInstance);
-    }
-
+    saveDb(dbInstance);
     return dbInstance;
 }
 
@@ -200,12 +204,17 @@ app.post('/admin/upload', cekLoginAdmin, upload.single('file_pdf'), async (req, 
     const originalName = req.file.originalname;
 
     try {
-        const { PDFParse } = require('pdf-parse');
-        const dataBuffer = fs.readFileSync(filePath);
-        const parser = new PDFParse({ data: dataBuffer });
-        const pdfData = await parser.getText();
-        await parser.destroy();
-        const cleanText = pdfData.text.replace(/\s+/g, ' ').trim();
+        const PDFParser = require('pdf2json');
+        const rawText = await new Promise((resolve, reject) => {
+            const pdfParser = new PDFParser(null, 1);
+            pdfParser.on('pdfParser_dataError', errData => reject(errData.parserError));
+            pdfParser.on('pdfParser_dataReady', () => {
+                resolve(pdfParser.getRawTextContent());
+            });
+            pdfParser.loadPDF(filePath);
+        });
+
+        const cleanText = rawText.replace(/\s+/g, ' ').trim();
 
         const db = await getDb();
         db.run('UPDATE dokumen_pdf SET is_active = 0');
@@ -220,7 +229,7 @@ app.post('/admin/upload', cekLoginAdmin, upload.single('file_pdf'), async (req, 
     } catch (error) {
         console.error('Error ekstraksi PDF:', error);
         if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-        res.status(500).send('Gagal memproses file PDF.');
+        res.status(500).send('Gagal memproses file PDF: ' + error.message);
     }
 });
 

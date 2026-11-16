@@ -21,7 +21,7 @@
     "express-session": "^1.19.0",
     "multer": "^2.5.0",
     "openai": "^7.57.0",
-    "pdf-parse": "^2.4.5",
+    "pdf2json": "^4.1.1",
     "sql.js": "^1.16.0"
   }
 }
